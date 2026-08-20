@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FastAPI × LLM — Prompt vs RAG vs Fine-Tuning</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --ink:#0F1613;
+    --panel:#161F1C;
+    --panel-2:#1C2622;
+    --line:#28342F;
+    --teal:#00C896;
+    --teal-dim:#0A6E56;
+    --amber:#FFB454;
+    --slate:#7C93FF;
+    --red:#FF6B6B;
+    --text:#E6EDE9;
+    --muted:#8A9C95;
+    --mono:'JetBrains Mono', monospace;
+    --sans:'Inter','IBM Plex Sans Arabic',sans-serif;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html{scroll-behavior:smooth;}
+  body{
+    background:var(--ink);
+    color:var(--text);
+    font-family:var(--sans);
+    line-height:1.7;
+  }
+  ::selection{background:var(--teal); color:#04120E;}
+
+  /* ---------- shared ---------- */
+  .wrap{max-width:1180px; margin:0 auto; padding:0 28px;}
+  .eyebrow{
+    font-family:var(--mono); font-size:12px; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--teal); display:flex; align-items:center; gap:10px; margin-bottom:14px;
+  }
+  .eyebrow::before{content:""; width:22px; height:1px; background:var(--teal); display:inline-block;}
+  h2.section-title{
+    font-family:var(--mono); font-weight:700; font-size:clamp(22px,3vw,32px);
+    color:var(--text); margin-bottom:6px;
+  }
+  .section-sub{color:var(--muted); font-size:15px; max-width:640px; margin-bottom:40px;}
+  section{padding:90px 0;}
+  .badge{
+    font-family:var(--mono); font-weight:700; font-size:11px; letter-spacing:.04em;
+    padding:4px 10px; border-radius:5px; display:inline-block;
+  }
+  .badge.get{background:rgba(0,200,150,.14); color:var(--teal); border:1px solid rgba(0,200,150,.35);}
+  .badge.post{background:rgba(124,147,255,.14); color:var(--slate); border:1px solid rgba(124,147,255,.35);}
+  .badge.eval{background:rgba(255,180,84,.14); color:var(--amber); border:1px solid rgba(255,180,84,.35);}
+  .route-head{display:flex; align-items:center; gap:12px; margin-bottom:8px; flex-wrap:wrap;}
+  .route-path{font-family:var(--mono); color:var(--muted); font-size:14px;}
+
+  /* ---------- nav ---------- */
+  nav{
+    position:sticky; top:0; z-index:50; backdrop-filter:blur(10px);
+    background:rgba(10,20,18,0.82); border-bottom:1px solid var(--line);
+  }
+  nav .wrap{display:flex; align-items:center; justify-content:space-between; height:64px;}
+  .brand{font-family:var(--mono); font-weight:700; color:var(--text); font-size:15px; display:flex; align-items:center; gap:8px;}
+  .brand .dot{width:9px; height:9px; border-radius:50%; background:var(--teal); box-shadow:0 0 12px var(--teal);}
+  .navlinks{display:flex; gap:26px; font-family:var(--mono); font-size:12.5px;}
+  .navlinks a{color:var(--muted); text-decoration:none; transition:color .2s;}
+  .navlinks a:hover{color:var(--teal);}
+  @media (max-width:720px){.navlinks{display:none;}}
+
+  /* ---------- hero ---------- */
+  .hero{padding:110px 0 80px; position:relative; overflow:hidden;}
+  .hero .status-line{
+    font-family:var(--mono); font-size:13px; color:var(--teal); background:rgba(0,200,150,.08);
+    border:1px solid rgba(0,200,150,.25); display:inline-flex; align-items:center; gap:8px;
+    padding:6px 14px; border-radius:20px; margin-bottom:28px;
+  }
+  .hero .status-line .p{width:7px; height:7px; border-radius:50%; background:var(--teal); animation:pulse 1.6s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;} 50%{opacity:.3;}}
+  .hero h1{
+    font-family:var(--mono); font-weight:800; font-size:clamp(34px,5.4vw,58px);
+    line-height:1.08; letter-spacing:-.01em; margin-bottom:22px;
+  }
+  .hero h1 span{color:var(--teal);}
+  .hero p.lead{font-size:17px; color:var(--muted); max-width:620px; margin-bottom:36px;}
+  .hero-meta{display:flex; gap:14px; flex-wrap:wrap;}
+  .meta-chip{
+    font-family:var(--mono); font-size:12.5px; color:var(--text); background:var(--panel);
+    border:1px solid var(--line); padding:8px 14px; border-radius:8px; display:flex; gap:8px; align-items:center;
+  }
+  .meta-chip b{color:var(--teal); font-weight:700;}
+  .hero-links{display:flex; gap:12px; margin-top:22px; flex-wrap:wrap;}
+  .link-btn{
+    display:flex; align-items:center; gap:9px; font-family:var(--mono); font-size:13px; font-weight:600;
+    color:var(--ink); background:var(--teal); padding:11px 18px; border-radius:9px; text-decoration:none;
+    transition:.2s; border:1px solid var(--teal);
+  }
+  .link-btn:hover{background:transparent; color:var(--teal);}
+  .link-btn:nth-child(2){background:transparent; color:var(--text); border-color:var(--line);}
+  .link-btn:nth-child(2):hover{border-color:var(--teal); color:var(--teal);}
+
+  /* ---------- overview / stack ---------- */
+  .grid-2{display:grid; grid-template-columns:1.1fr .9fr; gap:36px;}
+  @media (max-width:860px){.grid-2{grid-template-columns:1fr;}}
+  .card{
+    background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:28px;
+  }
+  .card p{color:var(--muted); font-size:15px;}
+  .card p + p{margin-top:12px;}
+  .stack-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:10px;}
+  .stack-item{
+    background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:12px 14px;
+    font-family:var(--mono); font-size:12.5px; color:var(--text); display:flex; flex-direction:column; gap:2px;
+  }
+  .stack-item .tag{color:var(--teal); font-weight:700;}
+
+  /* ---------- methodology matrix ---------- */
+  .matrix{width:100%; border-collapse:collapse; font-family:var(--mono); font-size:13px; margin-top:10px;}
+  .matrix th, .matrix td{border:1px solid var(--line); padding:14px; text-align:center;}
+  .matrix th{background:var(--panel-2); color:var(--teal); font-weight:600; letter-spacing:.02em;}
+  .matrix td{color:var(--muted); background:var(--panel);}
+  .matrix td.hl{color:var(--text); font-weight:600;}
+
+  /* ---------- terminal log (challenges) ---------- */
+  .terminal{
+    background:#060B0A; border:1px solid var(--line); border-radius:12px; overflow:hidden;
+    font-family:var(--mono); font-size:13px;
+  }
+  .term-top{
+    display:flex; gap:7px; padding:12px 16px; border-bottom:1px solid var(--line); background:var(--panel-2);
+  }
+  .term-top span{width:10px; height:10px; border-radius:50%; display:inline-block;}
+  .term-top .r{background:#FF5F57;} .term-top .y{background:#FEBC2E;} .term-top .g{background:#28C840;}
+  .term-body{padding:22px 20px; max-height:420px; overflow-y:auto;}
+  .term-line{display:flex; gap:12px; padding:5px 0; align-items:flex-start;}
+  .term-line .code{
+    flex-shrink:0; width:52px; text-align:center; font-weight:700; border-radius:4px; padding:2px 0; font-size:11.5px;
+  }
+  .c503{background:rgba(255,107,107,.15); color:var(--red);}
+  .c429{background:rgba(255,180,84,.15); color:var(--amber);}
+  .c200{background:rgba(0,200,150,.15); color:var(--teal);}
+  .term-line .msg{color:var(--muted);}
+  .term-line .msg b{color:var(--text); font-weight:600;}
+
+  /* ---------- results / chart ---------- */
+  .tabs{display:flex; gap:8px; margin-bottom:28px; flex-wrap:wrap;}
+  .tab-btn{
+    font-family:var(--mono); font-size:12.5px; background:var(--panel); color:var(--muted);
+    border:1px solid var(--line); padding:9px 16px; border-radius:8px; cursor:pointer; transition:.2s;
+  }
+  .tab-btn:hover{color:var(--text); border-color:var(--teal);}
+  .tab-btn.active{background:rgba(0,200,150,.12); color:var(--teal); border-color:var(--teal);}
+  .chart-card{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:26px; margin-bottom:26px;}
+  .chart-card canvas{max-height:340px;}
+
+  .method-cards{display:grid; grid-template-columns:repeat(3,1fr); gap:18px; margin-top:26px;}
+  @media (max-width:860px){.method-cards{grid-template-columns:1fr;}}
+  .method-card{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:22px; position:relative; overflow:hidden;}
+  .method-card::before{content:""; position:absolute; top:0; left:0; right:0; height:3px;}
+  .method-card.mc-prompt::before{background:var(--slate);}
+  .method-card.mc-rag::before{background:var(--teal);}
+  .method-card.mc-ft::before{background:var(--amber);}
+  .method-card h4{font-family:var(--mono); font-size:14px; margin-bottom:16px; display:flex; align-items:center; gap:8px;}
+  .method-card .dot{width:8px; height:8px; border-radius:50%;}
+  .mc-prompt .dot{background:var(--slate);} .mc-rag .dot{background:var(--teal);} .mc-ft .dot{background:var(--amber);}
+  .stat-row{display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px dashed var(--line); font-size:13.5px;}
+  .stat-row:last-child{border:none;}
+  .stat-row span:first-child{color:var(--muted);}
+  .stat-row span:last-child{font-family:var(--mono); font-weight:700; color:var(--text);}
+
+  /* ---------- category winners ---------- */
+  .winner-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:18px; margin-top:26px;}
+  @media (max-width:860px){.winner-grid{grid-template-columns:1fr;}}
+  .winner-card{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:24px;}
+  .winner-card .cat-name{font-family:var(--mono); color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.08em; margin-bottom:10px;}
+  .winner-card .winner-name{font-family:var(--mono); font-weight:700; font-size:20px; color:var(--teal); margin-bottom:10px;}
+  .winner-card p{color:var(--muted); font-size:13.5px;}
+
+  /* ---------- side by side example ---------- */
+  .qa-question{
+    font-family:var(--mono); font-size:15px; color:var(--text); background:var(--panel-2);
+    border:1px solid var(--line); border-radius:10px; padding:16px 20px; margin-bottom:22px;
+  }
+  .qa-question .lbl{color:var(--teal); font-size:11px; letter-spacing:.1em; display:block; margin-bottom:6px;}
+  .qa-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:16px;}
+  @media (max-width:900px){.qa-grid{grid-template-columns:1fr;}}
+  .qa-card{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px; display:flex; flex-direction:column;}
+  .qa-card .qa-head{font-family:var(--mono); font-size:12px; font-weight:700; margin-bottom:12px; padding-bottom:10px; border-bottom:1px solid var(--line);}
+  .qa-card.prompt .qa-head{color:var(--slate);}
+  .qa-card.rag .qa-head{color:var(--teal);}
+  .qa-card.ft .qa-head{color:var(--amber);}
+  .qa-card p{font-size:13px; color:var(--muted); flex:1;}
+
+  /* ---------- findings ---------- */
+  .findings{display:grid; grid-template-columns:repeat(2,1fr); gap:16px; margin-top:10px;}
+  @media (max-width:860px){.findings{grid-template-columns:1fr;}}
+  .finding{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:20px; display:flex; gap:14px;}
+  .finding .num{font-family:var(--mono); color:var(--teal); font-weight:800; font-size:20px; flex-shrink:0;}
+  .finding p{color:var(--muted); font-size:14px;}
+  .finding p b{color:var(--text);}
+
+  .toggle-head{cursor:pointer; display:flex; align-items:center; gap:12px; user-select:none;}
+  .toggle-head .chev{
+    font-family:var(--mono); color:var(--teal); font-size:20px; transition:transform .25s;
+    display:inline-block; flex-shrink:0;
+  }
+  .toggle-head.closed .chev{transform:rotate(-90deg);}
+  .collapsible{overflow:hidden; transition:max-height .3s ease;}
+  .collapsible.closed{max-height:0 !important;}
+
+  footer{border-top:1px solid var(--line); padding:40px 0; text-align:center;}
+  footer p{font-family:var(--mono); font-size:12px; color:var(--muted);}
+  footer .tag{color:var(--teal);}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <div class="brand"><span class="dot"></span> fastapi-llm-comparison</div>
+    <div class="navlinks">
+      <a href="#overview">Overview</a>
+      <a href="#stack">Stack</a>
+      <a href="#method">Methodology</a>
+      <a href="#challenges">Challenges</a>
+      <a href="#results">Results</a>
+      <a href="#findings">Findings</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="status-line"><span class="p"></span> 200 OK — evaluation complete</div>
+    <h1>Prompt-based <span>vs</span> RAG <span>vs</span> Fine-Tuning<br>على توثيق FastAPI الرسمي</h1>
+    <p class="lead">مشروع يقارن ثلاث طرق لبناء مساعد ذكي متخصص بـ FastAPI، مبني بالكامل على بيانات التوثيق الرسمي من GitHub — من تجهيز البيانات إلى التقييم الكمي النهائي.</p>
+    <div class="hero-meta">
+      <div class="meta-chip"><b>85</b> صفحة توثيق</div>
+      <div class="meta-chip"><b>20</b> سؤال اختبار</div>
+      <div class="meta-chip"><b>60</b> إجابة مُقيّمة</div>
+      <div class="meta-chip"><b>3</b> طرق مقارنة</div>
+    </div>
+    <div class="hero-links">
+      <a href="https://github.com/RaghadTwn1/FastAPI-LLM-Comparison" target="_blank" class="link-btn">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub Repo
+      </a>
+      <a href="#" id="colabLink" target="_blank" class="link-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="8.5" cy="12" r="5.5" stroke="currentColor" stroke-width="1.6"/><circle cx="15.5" cy="12" r="5.5" stroke="currentColor" stroke-width="1.6"/></svg>
+        شاهد الخطوات بـ Colab
+      </a>
+    </div>
+  </div>
+</header>
+
+<section id="overview">
+  <div class="wrap">
+    <div class="eyebrow">01 — project</div>
+    <div class="route-head"><span class="badge get">GET</span><span class="route-path">/overview</span></div>
+    <h2 class="section-title toggle-head" data-target="body-overview">فكرة المشروع <span class="chev">⌄</span></h2>
+    <p class="section-sub">لماذا FastAPI، ولماذا هذه الطرق الثلاث تحديداً.</p>
+
+    <div class="collapsible" id="body-overview">
+    <div class="grid-2">
+      <div class="card">
+        <p><b style="color:var(--text)">الهدف:</b> بناء ومقارنة ثلاث طرق مختلفة لجعل نموذج لغوي يجاوب بدقة عن أسئلة FastAPI التقنية — بدل استخدام مصدر بيانات جاهز، تم بناء الـ dataset من الصفر مباشرة من <b style="color:var(--teal)">official FastAPI GitHub repository</b>.</p>
+        <p>تم سحب ٨٥ صفحة توثيق رسمية (tutorial + advanced)، واستبدال كل إشارات الكود بالكود الفعلي من مجلد <code style="color:var(--teal)">docs_src</code>، وتنظيف المحتوى من HTML الزائد — لضمان أن كل طريقة تُختبر على معرفة حقيقية ودقيقة، لا نصوص مبتورة.</p>
+      </div>
+      <div class="card">
+        <p><b style="color:var(--text)">لماذا هذه المقارنة؟</b></p>
+        <p>لأن كل طريقة تمثل فلسفة مختلفة لحقن المعرفة داخل نموذج لغوي: الاعتماد على الذاكرة العامة، أو الاسترجاع اللحظي من مصدر خارجي، أو تطويع الأسلوب عبر أمثلة. المقارنة توضح متى تستحق كل طريقة استخدامها فعلياً.</p>
+      </div>
+    </div>
+    </div>
+  </div>
+</section>
+
+<section id="stack" style="background:var(--panel-2); border-top:1px solid var(--line); border-bottom:1px solid var(--line);">
+  <div class="wrap">
+    <div class="eyebrow">02 — stack</div>
+    <div class="route-head"><span class="badge get">GET</span><span class="route-path">/tech-stack</span></div>
+    <h2 class="section-title toggle-head" data-target="body-stack">التقنيات المستخدمة <span class="chev">⌄</span></h2>
+    <p class="section-sub">كل أداة أدت دوراً محدداً في بناء الأنظمة الثلاثة والتقييم.</p>
+
+    <div class="collapsible" id="body-stack">
+    <div class="stack-grid">
+      <div class="stack-item"><span class="tag">Google Colab</span>بيئة التطوير والتنفيذ</div>
+      <div class="stack-item"><span class="tag">Gemini API</span>التوليد + التقييم (LLM-as-a-judge)</div>
+      <div class="stack-item"><span class="tag">gemini-embedding-001</span>تحويل النصوص لمتجهات (3072 بعد)</div>
+      <div class="stack-item"><span class="tag">NumPy</span>Cosine Similarity لنظام الاسترجاع</div>
+      <div class="stack-item"><span class="tag">Python re / glob</span>استخراج ومعالجة نصوص التوثيق</div>
+      <div class="stack-item"><span class="tag">Few-shot Prompting</span>محاكاة Fine-tuning بدون Cloud billing</div>
+      <div class="stack-item"><span class="tag">Matplotlib</span>الرسوم البيانية الأولية</div>
+      <div class="stack-item"><span class="tag">GitHub</span>مصدر البيانات + استضافة المشروع</div>
+    </div>
+    </div>
+  </div>
+</section>
+
+<section id="method">
+  <div class="wrap">
+    <div class="eyebrow">03 — methodology</div>
+    <div class="route-head"><span class="badge post">POST</span><span class="route-path">/classify-question</span></div>
+    <h2 class="section-title toggle-head" data-target="body-method">نظام تصنيف الأسئلة <span class="chev">⌄</span></h2>
+    <p class="section-sub">كل سؤال من الـ20 مُصنّف على محورين مستقلّين — لفهم <i>لماذا</i> تفوز طريقة معينة، لا فقط أنها فازت.</p>
+
+    <div class="collapsible" id="body-method">
+    <table class="matrix">
+      <tr><th>المحور</th><th>Public Knowledge</th><th>Repo-Specific Knowledge</th><th>Absent Knowledge</th></tr>
+      <tr><td class="hl">مصدر المعرفة</td><td>معروف من أي مصدر عام</td><td>موجود بتوثيق FastAPI فقط</td><td>غير موجود إطلاقاً (سؤال ملغوم)</td></tr>
+      <tr><td class="hl">يختبر</td><td>التقارب بين الطرق</td><td>دقة الاسترجاع الحقيقي</td><td>الصدق مقابل الاختلاق (Hallucination)</td></tr>
+    </table>
+    </div>
+  </div>
+</section>
+
+<section id="challenges" style="background:var(--panel-2); border-top:1px solid var(--line); border-bottom:1px solid var(--line);">
+  <div class="wrap">
+    <div class="eyebrow">04 — real execution log</div>
+    <div class="route-head"><span class="badge eval">LOG</span><span class="route-path">/execution-history</span></div>
+    <h2 class="section-title toggle-head" data-target="body-challenges">المشاكل اللي واجهتني وكيف حُلّت <span class="chev">⌄</span></h2>
+    <p class="section-sub">لا شي مشى من أول مرة — وهذا جزء أصيل من أي مشروع حقيقي.</p>
+
+    <div class="collapsible" id="body-challenges">
+    <div class="terminal">
+      <div class="term-top"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+      <div class="term-body">
+        <div class="term-line"><span class="code c503">503</span><span class="msg"><b>gemini-2.0-flash</b> — النموذج توقف عن العمل رسمياً. الحل: الترقية إلى <b>gemini-3.6-flash</b>.</span></div>
+        <div class="term-line"><span class="code c503">503</span><span class="msg">ازدحام مؤقت على سيرفرات Gemini خلال Prompt-based. الحل: retry logic + انتظار تصاعدي.</span></div>
+        <div class="term-line"><span class="code c429">429</span><span class="msg"><b>RESOURCE_EXHAUSTED</b> — تجاوزنا الحصة اليومية المجانية (20 طلب/نموذج). الحل: التبديل إلى <b>gemini-3.5-flash-lite</b> صاحب حصة منفصلة.</span></div>
+        <div class="term-line"><span class="code c200">200</span><span class="msg">نجاح كامل لـ 85 صفحة embeddings بعد معالجة أخطاء بثلاث محاولات لكل صفحة.</span></div>
+        <div class="term-line"><span class="code c503">503</span><span class="msg">تكرر الازدحام أثناء تجميع Speed/Cost/Quality معاً (60 طلب دفعة واحدة).</span></div>
+        <div class="term-line"><span class="code c200">200</span><span class="msg">صفر أخطاء نهائياً بعد التبديل الكامل لـ <b>gemini-3.5-flash-lite</b> في كل الدوال.</span></div>
+        <div class="term-line"><span class="code c200">200</span><span class="msg"><b>Fine-tuning حقيقي</b> عبر Vertex AI يتطلب Cloud billing — تم اعتماد <b>Few-shot Prompting</b> كبديل منهجي موثّق وصادق بدلاً من المخاطرة.</span></div>
+      </div>
+    </div>
+    </div>
+  </div>
+</section>
+
+<section id="results">
+  <div class="wrap">
+    <div class="eyebrow">05 — evaluation</div>
+    <div class="route-head"><span class="badge eval">EVAL</span><span class="route-path">/results/summary</span></div>
+    <h2 class="section-title toggle-head" data-target="body-results">النتائج النهائية <span class="chev">⌄</span></h2>
+    <p class="section-sub">تقييم بـ LLM-as-a-judge على أربعة محاور، بالإضافة إلى قياس حقيقي للسرعة والتكلفة بالدولار.</p>
+
+    <div class="collapsible" id="body-results">
+    <div class="chart-card">
+      <p style="font-family:var(--mono); font-size:12px; color:var(--muted); margin-bottom:14px;">مقارنة شاملة — الأربعة محاور معاً (Speed وCost مُحوّلة لمقياس 0–5 بحيث كل ما زاد الشكل اتساعاً كان أفضل)</p>
+      <canvas id="radarChart"></canvas>
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-view="quality">Quality & Groundedness</button>
+      <button class="tab-btn" data-view="speed">Speed (seconds)</button>
+      <button class="tab-btn" data-view="cost">Cost (USD)</button>
+    </div>
+
+    <div class="chart-card">
+      <p style="font-family:var(--mono); font-size:12px; color:var(--muted); margin-bottom:14px;">مقارنة تفصيلية — اضغطي على الأزرار فوق لتبديل المقياس</p>
+      <canvas id="mainChart"></canvas>
+    </div>
+
+    <div class="method-cards">
+      <div class="method-card mc-prompt">
+        <h4><span class="dot"></span>Prompt-based</h4>
+        <div class="stat-row"><span>Quality</span><span>4.97 / 5</span></div>
+        <div class="stat-row"><span>Groundedness</span><span>5.00 / 5</span></div>
+        <div class="stat-row"><span>Speed</span><span>8.62s</span></div>
+        <div class="stat-row"><span>Cost / سؤال</span><span>$0.001456</span></div>
+      </div>
+      <div class="method-card mc-rag">
+        <h4><span class="dot"></span>RAG</h4>
+        <div class="stat-row"><span>Quality</span><span>4.52 / 5</span></div>
+        <div class="stat-row"><span>Groundedness</span><span>4.80 / 5</span></div>
+        <div class="stat-row"><span>Speed</span><span>1.34s</span></div>
+        <div class="stat-row"><span>Cost / سؤال</span><span>$0.000240</span></div>
+      </div>
+      <div class="method-card mc-ft">
+        <h4><span class="dot"></span>Fine-tuned (Few-shot)</h4>
+        <div class="stat-row"><span>Quality</span><span>4.95 / 5</span></div>
+        <div class="stat-row"><span>Groundedness</span><span>5.00 / 5</span></div>
+        <div class="stat-row"><span>Speed</span><span>1.15s</span></div>
+        <div class="stat-row"><span>Cost / سؤال</span><span>$0.000198</span></div>
+      </div>
+    </div>
+    </div>
+  </div>
+</section>
+
+<section style="background:var(--panel-2); border-top:1px solid var(--line); border-bottom:1px solid var(--line);">
+  <div class="wrap">
+    <div class="eyebrow">06 — breakdown</div>
+    <div class="route-head"><span class="badge eval">EVAL</span><span class="route-path">/results/by-category</span></div>
+    <h2 class="section-title toggle-head" data-target="body-breakdown">الفايز بكل فئة <span class="chev">⌄</span></h2>
+    <p class="section-sub">التحليل الحقيقي المفيد — مو مين أفضل بشكل عام، بل مين أفضل في أي موقف بالضبط.</p>
+
+    <div class="collapsible" id="body-breakdown">
+    <div class="winner-grid">
+      <div class="winner-card">
+        <div class="cat-name">Public Knowledge</div>
+        <div class="winner-name">Prompt-based / Fine-tuned</div>
+        <p>تعادل تام (5.00/5.00). RAG تراجع هنا بشكل لافت (3.42) — تقييد الإجابة بصفحات توثيق محددة أضعف الشمولية في أسئلة عامة لا تحتاج مصدر خاص.</p>
+      </div>
+      <div class="winner-card">
+        <div class="cat-name">Repo-Specific Knowledge</div>
+        <div class="winner-name">Prompt-based (بفارق ضئيل)</div>
+        <p>النتائج متقاربة جداً (4.72–4.94) — عكس التوقع الأصلي بتفوق RAG الحاسم. النموذج الأساسي كان بالفعل مطّلعاً على FastAPI من تدريبه العام.</p>
+      </div>
+      <div class="winner-card">
+        <div class="cat-name">Absent Knowledge</div>
+        <div class="winner-name">تعادل ثلاثي — 5.00 / 5.00</div>
+        <p>أهم نتيجة بالمشروع: الطرق الثلاث اعترفت بعدم معرفتها بدل اختلاق إجابات لأسئلة وهمية — صدق كامل رغم اختلاف الآلية.</p>
+      </div>
+    </div>
+    </div>
+  </div>
+</section>
+
+<section id="example">
+  <div class="wrap">
+    <div class="eyebrow">07 — side by side</div>
+    <div class="route-head"><span class="badge get">GET</span><span class="route-path">/example/live-comparison</span></div>
+    <h2 class="section-title toggle-head" data-target="body-example">مثال حقيقي من المشروع <span class="chev">⌄</span></h2>
+    <p class="section-sub">نفس السؤال بالضبط، ثلاث إجابات، ثلاثة أساليب تفكير مختلفة.</p>
+
+    <div class="collapsible" id="body-example">
+    <div class="qa-question"><span class="lbl">QUESTION</span>What does response_model_exclude_unset do?</div>
+
+    <div class="qa-grid">
+      <div class="qa-card prompt">
+        <div class="qa-head">● PROMPT-BASED</div>
+        <p>إجابة طويلة ومفصّلة جداً — شرح كامل مع أمثلة كود متعددة (before/after)، ومقارنة مع response_model_exclude_defaults وresponse_model_exclude_none. غنية لكن أطول من اللازم لسؤال مباشر.</p>
+      </div>
+      <div class="qa-card rag">
+        <div class="qa-head">● RAG</div>
+        <p>"…omits default values from the result if they were not actually set explicitly. Only the values that were actually set will be returned." — إجابة مبنية حرفياً على صفحة Response Model من التوثيق الرسمي.</p>
+      </div>
+      <div class="qa-card ft">
+        <div class="qa-head">● FINE-TUNED</div>
+        <p>"…a parameter used to exclude fields that were not explicitly set… ensuring only fields provided by the user are returned." — جملة تعريفية واحدة مكثّفة، بنفس أسلوب الأمثلة الثلاثة المُعطاة له.</p>
+      </div>
+    </div>
+    </div>
+  </div>
+</section>
+
+<section id="findings" style="background:var(--panel-2); border-top:1px solid var(--line);">
+  <div class="wrap">
+    <div class="eyebrow">08 — takeaways</div>
+    <div class="route-head"><span class="badge eval">EVAL</span><span class="route-path">/findings</span></div>
+    <h2 class="section-title toggle-head" data-target="body-findings">أهم ما تعلمته من المشروع <span class="chev">⌄</span></h2>
+    <p class="section-sub">نقاط القوة الحقيقية اللي بنيتها، مو بس نتائج الأرقام.</p>
+
+    <div class="collapsible" id="body-findings">
+    <div class="findings">
+      <div class="finding"><div class="num">01</div><p><b>بناء dataset من الصفر</b> — لا استخدام مصدر جاهز، بل استخراج ٨٥ صفحة رسمية من GitHub مباشرة، مع دمج الكود الحقيقي بدل روابط placeholder.</p></div>
+      <div class="finding"><div class="num">02</div><p><b>نظام تصنيف أصيل بمحورين</b> — مصدر المعرفة × درجة الخطورة، صُمم من الصفر ليكشف <i>سبب</i> فوز كل طريقة لا مجرد النتيجة.</p></div>
+      <div class="finding"><div class="num">03</div><p><b>مرونة هندسية حقيقية</b> — التعامل مع 503/429 وتبديل النماذج بدل التوقف، بمعالجة أخطاء متدرجة (retry → model switch → quota check).</p></div>
+      <div class="finding"><div class="num">04</div><p><b>قرار منهجي واعٍ</b> — اختيار Few-shot Prompting بدل المخاطرة بـ Cloud billing، وتوثيق السبب بصراحة كامل بدل التظاهر بأنه Fine-tuning كامل.</p></div>
+      <div class="finding"><div class="num">05</div><p><b>تقييم كمي لا انطباعي</b> — استخدام LLM-as-a-judge على أربعة محاور + قياس Speed/Cost حقيقيين بالثانية والدولار، لا تقييم شخصي.</p></div>
+      <div class="finding"><div class="num">06</div><p><b>نتيجة غير متوقعة وموثّقة بصدق</b> — RAG لم يتفوق كما هو متوقع نظرياً في Repo-Specific، وهذا وُثّق كما هو دون تحسين مصطنع للنتائج.</p></div>
+    </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>FastAPI × LLM Comparison — Built with <span class="tag">Gemini API</span> on official <span class="tag">fastapi/fastapi</span> documentation</p>
+    <p style="margin-top:8px; color:var(--text); font-weight:600;">by Raghad</p>
+  </div>
+</footer>
+
+<script>
+// ضعي رابط Colab حقك هنا بالضبط بين علامتي التنصيص
+const COLAB_URL = "PASTE_COLAB_LINK_HERE";
+document.getElementById('colabLink').href = COLAB_URL;
+
+// أقسام قابلة للطي
+document.querySelectorAll('.toggle-head').forEach(head => {
+  head.addEventListener('click', () => {
+    const target = document.getElementById(head.dataset.target);
+    head.classList.toggle('closed');
+    target.classList.toggle('closed');
+  });
+});
+
+// رسم الرادار — مقارنة شاملة للأربعة محاور معاً
+new Chart(document.getElementById('radarChart').getContext('2d'), {
+  type: 'radar',
+  data: {
+    labels: ['Quality', 'Groundedness', 'Speed (عكسي)', 'Cost (عكسي)'],
+    datasets: [
+      { label: 'Prompt-based', data: [4.97, 5.00, 1.2, 1.3], borderColor: '#7C93FF', backgroundColor: 'rgba(124,147,255,.15)', pointBackgroundColor:'#7C93FF' },
+      { label: 'RAG', data: [4.52, 4.80, 4.9, 4.6], borderColor: '#00C896', backgroundColor: 'rgba(0,200,150,.15)', pointBackgroundColor:'#00C896' },
+      { label: 'Fine-tuned', data: [4.95, 5.00, 5.0, 5.0], borderColor: '#FFB454', backgroundColor: 'rgba(255,180,84,.15)', pointBackgroundColor:'#FFB454' }
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { labels: { color: '#E6EDE9', font: { family:'JetBrains Mono', size:12 } } } },
+    scales: {
+      r: {
+        angleLines: { color: '#28342F' }, grid: { color: '#28342F' },
+        pointLabels: { color: '#8A9C95', font: { family:'JetBrains Mono', size:11 } },
+        ticks: { display:false }, suggestedMin: 0, suggestedMax: 5
+      }
+    }
+  }
+});
+
+const ctx = document.getElementById('mainChart').getContext('2d');
+const labels = ['Prompt-based', 'RAG', 'Fine-tuned'];
+const colors = ['#7C93FF', '#00C896', '#FFB454'];
+
+const datasets = {
+  quality: {
+    label: 'Score (out of 5)',
+    data: {
+      quality: [4.97, 4.52, 4.95],
+      grounded: [5.00, 4.80, 5.00]
+    }
+  }
+};
+
+let chart = new Chart(ctx, {
+  type: 'bar',
+  data: {
+    labels: labels,
+    datasets: [
+      { label: 'Quality', data: [4.97, 4.52, 4.95], backgroundColor: '#00C896', borderRadius: 6, maxBarThickness: 46 },
+      { label: 'Groundedness', data: [5.00, 4.80, 5.00], backgroundColor: '#7C93FF', borderRadius: 6, maxBarThickness: 46 }
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { labels: { color: '#E6EDE9', font: { family: 'JetBrains Mono', size: 12 } } },
+      tooltip: { backgroundColor: '#101E1B', borderColor: '#20342F', borderWidth: 1, titleFont:{family:'JetBrains Mono'}, bodyFont:{family:'JetBrains Mono'} }
+    },
+    scales: {
+      y: { beginAtZero: true, max: 5.5, ticks: { color: '#7C9089', font:{family:'JetBrains Mono'} }, grid: { color: '#20342F' } },
+      x: { ticks: { color: '#E6EDE9', font:{family:'JetBrains Mono', weight:600} }, grid: { display:false } }
+    }
+  }
+});
+
+const views = {
+  quality: {
+    datasets: [
+      { label: 'Quality', data: [4.97, 4.52, 4.95], backgroundColor: '#00C896', borderRadius: 6, maxBarThickness: 46 },
+      { label: 'Groundedness', data: [5.00, 4.80, 5.00], backgroundColor: '#7C93FF', borderRadius: 6, maxBarThickness: 46 }
+    ],
+    max: 5.5
+  },
+  speed: {
+    datasets: [
+      { label: 'Speed (seconds)', data: [8.62, 1.34, 1.15], backgroundColor: '#FF6B6B', borderRadius: 6, maxBarThickness: 60 }
+    ],
+    max: 10
+  },
+  cost: {
+    datasets: [
+      { label: 'Cost per question (USD)', data: [0.001456, 0.000240, 0.000198], backgroundColor: '#FFB454', borderRadius: 6, maxBarThickness: 60 }
+    ],
+    max: 0.0018
+  }
+};
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const view = views[btn.dataset.view];
+    chart.data.datasets = view.datasets;
+    chart.options.scales.y.max = view.max;
+    chart.update();
+  });
+});
+</script>
+
+</body>
+</html>
